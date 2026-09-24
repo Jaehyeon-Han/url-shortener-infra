@@ -1,8 +1,8 @@
 variable "aws_region" {
-    type = string
+  type = string
 }
 
 variable "name" {
-  type = string
+  type    = string
   default = "urlshortener"
 }

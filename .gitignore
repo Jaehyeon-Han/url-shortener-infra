@@ -8,3 +8,6 @@ override.tf.json
 
 # backend 설정(버킷명에 account_id 포함). 예시 템플릿(.example)만 커밋한다.
 backend.hcl
+
+# lambda 모듈이 생성하는 플레이스홀더 zip 산출물
+**/.placeholder_*.zip

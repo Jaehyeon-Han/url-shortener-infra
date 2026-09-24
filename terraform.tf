@@ -6,6 +6,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # lambda 모듈이 플레이스홀더 zip을 만들 때 사용한다.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 
   # State는 bootstrap 스택이 만든 S3 버킷에 저장한다.
