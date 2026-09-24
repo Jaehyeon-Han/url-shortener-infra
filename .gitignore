@@ -5,3 +5,6 @@ crash.log
 *.tfvars
 override.tf
 override.tf.json
+
+# backend 설정(버킷명에 account_id 포함). 예시 템플릿(.example)만 커밋한다.
+backend.hcl
