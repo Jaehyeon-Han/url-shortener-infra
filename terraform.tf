@@ -11,6 +11,12 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.0"
     }
+    # certificate 모듈이 ACM DNS 검증 CNAME을 Porkbun DNS에 생성할 때 사용한다.
+    # 서드파티(비공식) provider이며, plan/apply가 실제 Porkbun DNS를 변경한다.
+    porkbun = {
+      source  = "jianyuan/porkbun"
+      version = "~> 0.3"
+    }
   }
 
   # State는 bootstrap 스택이 만든 S3 버킷에 저장한다.

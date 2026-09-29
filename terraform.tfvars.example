@@ -1,0 +1,13 @@
+# 이 파일을 terraform.tfvars로 복사해 실제 값을 채운다.
+# terraform.tfvars는 민감값을 포함하므로 커밋하지 않는다(.gitignore로 제외됨).
+
+# 배포 리전이다.
+aws_region = "ap-northeast-2"
+
+# 인증서를 발급할 루트 도메인이다. Porkbun에서 관리하는 도메인을 넣는다.
+domain_name = "example.com"
+
+# Porkbun API 자격증명이다. Porkbun 콘솔에서 발급하고,
+# 대상 도메인의 API Access를 반드시 ON으로 활성화한다.
+porkbun_api_key    = "pk1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+porkbun_secret_key = "sk1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

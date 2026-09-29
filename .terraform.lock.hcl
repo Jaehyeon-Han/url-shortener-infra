@@ -45,3 +45,25 @@ provider "registry.terraform.io/hashicorp/aws" {
     "zh:f304df223a0bc3e840a806a5dffb75e6b2b75c879053dc4ebd0228484923ee59",
   ]
 }
+
+provider "registry.terraform.io/jianyuan/porkbun" {
+  version     = "0.3.3"
+  constraints = "~> 0.3"
+  hashes = [
+    "h1:lNcSvgrBmdl4KFDcveQKUEFGp77N/DHdgfLFwDc7m9k=",
+    "zh:000907a17a31d6cfe31255dbc6e179793959b34272431e4639dfc9c9394dd5f3",
+    "zh:02cf6fedd0d7ac6e29f6903ee1ead4d95a57d58e7b400081e1a9fb72c4c62129",
+    "zh:120bd1bbe97b2e20d62d9eaa01f7131977ea7d95a96e7740289ec03e729b89da",
+    "zh:1464c29c64ddcefcf73a45b7962ef040c770696806ad848b298c2aa1aec90aa4",
+    "zh:1c45c7ae95445264e08b58c7dfa573d762b7dfe26e942daa74c8b189d2142ec6",
+    "zh:2414fa70f53ceaf12422b1402e03a2e1716f82bc2e6697457fc21254fcd94706",
+    "zh:31647e603874c79cd0d765dd8e2c011d77368b2ab738302761ba2cf47bec465b",
+    "zh:539104ce45115d9f50dda79557f6f50dc573327e11e6816ee43b004bf9ac9629",
+    "zh:5d222ac707f342e0c9affaed894326f4dc051afd3fa5629b313cba06ff2d058d",
+    "zh:890df766e9b839623b1f0437355032a3c006226a6c200cd911e15ee1a9014e9f",
+    "zh:ad32d08f8ebacedcddad35f7e982aac2c716076cb453f53c8a404192c55cd849",
+    "zh:b9d3b0cc92e91ca1390bebfbcd635c4f2002c26e9fe93754e79ecab641615728",
+    "zh:f1f95b7f3b2a5f17b0db3be8e1ce5d9748a77ffd937aa038f88193a34acece99",
+    "zh:f396fd854862999d0856fc6a9d31bd0ea18189d4f5a4ad7819a36555e588ef00",
+  ]
+}

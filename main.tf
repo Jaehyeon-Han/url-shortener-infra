@@ -51,3 +51,17 @@ module "lambda_auth" {
     COGNITO_CLIENT_ID = module.cognito.user_pool_client_id
   }
 }
+
+# 루트 도메인 TLS 인증서를 발급/검증한다.
+# 인증서 발급(ACM) + 검증 CNAME 생성(Porkbun) + 검증 완료 대기를 한 모듈에 응집한다.
+# porkbun provider는 루트에서 정의해 모듈로 전달한다.
+module "certificate" {
+  source = "./modules/certificate"
+
+  name        = var.name
+  domain_name = var.domain_name
+
+  providers = {
+    porkbun = porkbun
+  }
+}

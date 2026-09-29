@@ -9,3 +9,9 @@ output "auth_function_name" {
   description = "인증 Lambda 함수 이름."
   value       = module.lambda_auth.function_name
 }
+
+# 검증 완료된 TLS 인증서 ARN이다. API Gateway/ALB 등에 연결할 때 사용한다.
+output "certificate_arn" {
+  description = "검증 완료된 ACM 인증서 ARN."
+  value       = module.certificate.certificate_arn
+}

@@ -21,7 +21,7 @@ AWS 기반 서버리스 URL 단축 서비스의 인프라를 Terraform으로 관
 
 ## 현재 구현 상태
 
-- 구현됨: `bootstrap`(state용 S3 버킷), `modules/cognito`(사용자 인증), `modules/artifacts`(Lambda 코드 zip 보관 버킷), `modules/lambda`(재사용 Node.js Lambda 모듈, 루트에 `auth` 함수 배선).
+- 구현됨: `bootstrap`(state용 S3 버킷), `modules/cognito`(사용자 인증), `modules/artifacts`(Lambda 코드 zip 보관 버킷), `modules/lambda`(재사용 Node.js Lambda 모듈, 루트에 `auth` 함수 배선), `modules/certificate`(루트 도메인 TLS 인증서 발급 + Porkbun DNS 검증 자동화).
 - 미구현: API Gateway, Aurora Serverless, 단축/리다이렉트 Lambda 함수는 아직 없다(단축/리다이렉트는 `modules/lambda`를 재사용해 추가한다).
 
 ## 문서 규칙
