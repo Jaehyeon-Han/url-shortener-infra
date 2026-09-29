@@ -7,7 +7,8 @@ Url 단축기를 위한 AWS 인프라 설정이다.
 1. Cognito: 사용자를 인증한다.
 2. artifacts: Lambda 배포 아티팩트(zip)를 보관하는 S3 버킷이다. CI가 이 버킷에 코드 zip을 업로드한다.
 3. lambda: 재사용 가능한 Node.js(mjs) Lambda 함수 모듈이다.
-4. certificate: 루트 도메인 TLS 인증서를 ACM으로 발급하고 Porkbun DNS로 검증을 자동화한다.
+4. certificate: 루트 도메인 TLS 인증서를 ACM으로 발급하고 Porkbun DNS로 검증을 자동화한다. `auth.<domain>`을 SAN으로 함께 커버한다.
+5. apigateway: 인증 Lambda 앞단의 HTTP API(v2)다. auth 라우트를 노출하고 `auth.<domain>` 커스텀 도메인 + TLS를 연결하며, 해당 CNAME을 Porkbun DNS에 생성한다.
 
 ## 문서
 - 각 모듈의 상세(목적/Inputs/Outputs)는 해당 `modules/<name>/README.md`를 참고한다.

@@ -4,6 +4,7 @@
 
 루트 도메인에 대한 AWS ACM 퍼블릭 TLS 인증서를 발급하고, DNS 검증을 자동화한다.
 인증서 발급(ACM), 검증용 CNAME 생성(Porkbun DNS), 검증 완료 대기를 하나의 모듈에 응집한다.
+`subject_alternative_names`로 추가 도메인(SAN)을 넘기면 하나의 인증서가 여러 도메인을 함께 커버한다 (예: 루트 + `auth.jhan.cc`).
 
 인증서를 실제로 연결하는 리소스(API Gateway custom domain, ALB 등)는 이 모듈 범위가 아니다.
 연결 대상은 이 모듈의 `certificate_arn` 출력을 참조해 별도로 구성한다.
@@ -30,6 +31,7 @@
 |---|---|---|---|
 | `name` | 리소스 이름 접두사 (예: `urlshortener`). 태그에 사용한다. | `string` | 예 |
 | `domain_name` | 인증서를 발급할 루트 도메인 (예: `jhan.cc`). | `string` | 예 |
+| `subject_alternative_names` | 인증서가 함께 커버할 추가 도메인(SAN) 목록. 완전한 도메인 문자열을 넘긴다 (예: `["auth.jhan.cc"]`). 기본값 `[]`. | `list(string)` | 아니오 |
 
 ## Outputs
 

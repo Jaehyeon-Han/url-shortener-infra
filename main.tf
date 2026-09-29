@@ -37,9 +37,9 @@ module "lambda_auth" {
   source = "./modules/lambda"
 
   name = "${var.name}-auth"
-  # 소스는 src/handlers/auth.mjs 이며, CI가 src/를 zip 루트로 압축한다.
-  # 따라서 zip 내부 경로 기준 핸들러는 handlers/auth.handler 다.
-  handler = "handlers/auth.handler"
+  # CI가 프로젝트 루트 전체를 zip으로 압축하므로 zip 내부 경로는 src/ 접두가 붙는다.
+  # 소스는 src/handlers/auth.mjs 이며, zip 루트 기준 핸들러는 src/handlers/auth.handler 다.
+  handler = "src/handlers/auth.handler"
 
   artifact_bucket = module.artifacts.bucket_id
   s3_key          = "auth/function.zip"
@@ -60,6 +60,31 @@ module "certificate" {
 
   name        = var.name
   domain_name = var.domain_name
+
+  # 인증 API 커스텀 도메인(auth.<domain>)을 같은 인증서로 커버한다.
+  # 모듈은 서브도메인을 조립하지 않으므로 완전한 도메인 문자열을 넘긴다.
+  subject_alternative_names = ["auth.${var.domain_name}"]
+
+  providers = {
+    porkbun = porkbun
+  }
+}
+
+# 인증 Lambda 앞단의 HTTP API(v2)다.
+# 6개 auth 라우트를 노출하고, auth.<domain> 커스텀 도메인 + TLS를 연결한다.
+# 커스텀 도메인 CNAME은 이 모듈이 Porkbun DNS에 생성하므로 porkbun provider를 전달한다.
+module "apigateway" {
+  source = "./modules/apigateway"
+
+  name = "${var.name}-auth"
+
+  lambda_invoke_arn    = module.lambda_auth.invoke_arn
+  lambda_function_name = module.lambda_auth.function_name
+
+  # certificate 모듈이 SAN으로 auth.<domain>을 커버한다.
+  certificate_arn = module.certificate.certificate_arn
+  domain_name     = "auth.${var.domain_name}"
+  porkbun_domain  = var.domain_name
 
   providers = {
     porkbun = porkbun

@@ -15,3 +15,15 @@ output "certificate_arn" {
   description = "검증 완료된 ACM 인증서 ARN."
   value       = module.certificate.certificate_arn
 }
+
+# 인증 API의 커스텀 도메인 호출 URL이다 (예: https://auth.jhan.cc).
+output "auth_api_url" {
+  description = "인증 API 커스텀 도메인 호출 URL."
+  value       = module.apigateway.custom_domain_url
+}
+
+# 인증 API의 기본 실행 엔드포인트(execute-api URL)다. 커스텀 도메인 전파 전/디버깅에 쓴다.
+output "auth_api_endpoint" {
+  description = "인증 API 기본 실행 엔드포인트(execute-api URL)."
+  value       = module.apigateway.api_endpoint
+}

@@ -4,6 +4,9 @@ resource "aws_acm_certificate" "this" {
   domain_name       = var.domain_name
   validation_method = "DNS"
 
+  # 루트 도메인 외에 추가로 커버할 도메인(SAN)이다. 예: auth.jhan.cc
+  subject_alternative_names = var.subject_alternative_names
+
   # 갱신 시 무중단 교체를 위해 새 인증서를 먼저 만든 뒤 기존 것을 제거한다.
   lifecycle {
     create_before_destroy = true
