@@ -22,6 +22,12 @@ output "auth_function_name" {
   value       = module.lambda_auth.function_name
 }
 
+# URL 단축/통계/리다이렉트 Lambda 함수 이름이다. CI는 이 이름으로 update-function-code를 호출한다.
+output "url_function_name" {
+  description = "URL 단축/통계/리다이렉트 Lambda 함수 이름."
+  value       = module.lambda_url.function_name
+}
+
 # 검증 완료된 TLS 인증서 ARN이다. API Gateway/ALB 등에 연결할 때 사용한다.
 output "certificate_arn" {
   description = "검증 완료된 ACM 인증서 ARN."
@@ -38,4 +44,16 @@ output "auth_api_url" {
 output "auth_api_endpoint" {
   description = "인증 API 기본 실행 엔드포인트(execute-api URL)."
   value       = module.apigateway.api_endpoint
+}
+
+# URL API의 커스텀 도메인 호출 URL이다 (예: https://short.jhan.cc).
+output "url_api_url" {
+  description = "URL API 커스텀 도메인 호출 URL."
+  value       = module.apigateway_url.custom_domain_url
+}
+
+# URL API의 기본 실행 엔드포인트(execute-api URL)다. 커스텀 도메인 전파 전/디버깅에 쓴다.
+output "url_api_endpoint" {
+  description = "URL API 기본 실행 엔드포인트(execute-api URL)."
+  value       = module.apigateway_url.api_endpoint
 }

@@ -45,6 +45,39 @@ resource "aws_apigatewayv2_route" "this" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
+# --- JWT authorizer (선택) ---
+
+# jwt_issuer가 주어질 때만 생성한다. Cognito가 발급한 JWT(access/id token)를
+# Authorization 헤더에서 검증한다. 보호 라우트가 이 authorizer를 참조한다.
+resource "aws_apigatewayv2_authorizer" "jwt" {
+  count = var.jwt_issuer != null ? 1 : 0
+
+  api_id           = aws_apigatewayv2_api.this.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "${var.name}-jwt"
+
+  jwt_configuration {
+    issuer   = var.jwt_issuer
+    audience = var.jwt_audiences
+  }
+}
+
+# --- 보호 라우트 (JWT authorizer 적용) ---
+
+# protected_route_keys의 각 "METHOD /path"를 공개 라우트와 동일한 Lambda 통합으로
+# 연결하되, JWT authorizer를 붙여 인증된 요청만 통과시킨다.
+# 핸들러는 authorizer가 채운 requestContext.authorizer.jwt.claims.sub로 소유자를 식별한다.
+resource "aws_apigatewayv2_route" "protected" {
+  for_each = toset(var.protected_route_keys)
+
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = each.value
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt[0].id
+}
+
 # --- Lambda 호출 권한 ---
 
 # API Gateway가 이 Lambda를 호출할 수 있도록 리소스 기반 권한을 부여한다.

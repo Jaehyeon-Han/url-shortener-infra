@@ -2,17 +2,20 @@
 
 ## 목적
 
-인증 Lambda 앞단에 두는 HTTP API(v2)를 구성한다.
+Lambda 앞단에 두는 HTTP API(v2)를 구성한다.
 외부 HTTP 요청을 payload v2 형식으로 Lambda에 프록시하고, 명시적으로 등록한 라우트만 노출한다.
-커스텀 도메인(예: `auth.jhan.cc`)과 TLS를 연결하고, 해당 도메인을 API Gateway로 향하게 하는 CNAME을 Porkbun DNS에 생성한다.
+커스텀 도메인(예: `auth.jhan.cc`, `short.jhan.cc`)과 TLS를 연결하고, 해당 도메인을 API Gateway로 향하게 하는 CNAME을 Porkbun DNS에 생성한다.
 
-이 모듈은 재사용을 전제로 하며, `route_keys`/CORS/도메인 값을 주입해 다른 API에도 쓸 수 있다.
+이 모듈은 재사용을 전제로 하며, `route_keys`/`protected_route_keys`/CORS/도메인 값을 주입해 여러 API에 쓴다.
+현재 루트에서 auth API(공개 전용)와 URL API(공개 리다이렉트 + JWT 보호 라우트)를 모두 이 모듈로 배선한다.
 
 ## 구성 리소스
 
 - `aws_apigatewayv2_api` — HTTP API 본체. CORS를 설정한다.
 - `aws_apigatewayv2_integration` — Lambda AWS_PROXY 통합(payload v2).
-- `aws_apigatewayv2_route` — `route_keys`의 각 항목마다 하나씩 생성하는 명시적 라우트.
+- `aws_apigatewayv2_route` (공개) — `route_keys`의 각 항목마다 하나씩 생성하는 명시적 라우트.
+- `aws_apigatewayv2_authorizer` (선택) — `jwt_issuer`가 주어질 때만 생성하는 Cognito JWT authorizer.
+- `aws_apigatewayv2_route.protected` (보호) — `protected_route_keys`의 각 항목에 JWT authorizer를 붙인 라우트.
 - `aws_lambda_permission` — API Gateway가 Lambda를 호출하도록 하는 리소스 기반 권한.
 - `aws_cloudwatch_log_group` + `aws_apigatewayv2_stage` — `$default` 스테이지와 JSON 액세스 로그.
 - `aws_apigatewayv2_domain_name` + `aws_apigatewayv2_api_mapping` — 커스텀 도메인과 스테이지 매핑.
@@ -28,6 +31,18 @@
 5. 커스텀 도메인이 가리키는 regional target 도메인으로 Porkbun에 CNAME을 만든다.
    - Porkbun의 `subdomain`은 루트 도메인을 제외한 부분만 요구하므로, `domain_name`에서 `.<porkbun_domain>`을 제거해 넘긴다 (예: `auth.jhan.cc` → `auth`).
 
+## 공개 라우트 vs 보호 라우트 (JWT authorizer)
+
+라우트는 두 종류로 나뉜다.
+
+- **공개 라우트(`route_keys`)**: authorizer 없이 그대로 노출한다. auth API처럼 전부 공개면 이 변수만 쓰면 된다(기본값은 auth 6개 라우트).
+- **보호 라우트(`protected_route_keys`)**: Cognito JWT authorizer로 보호한다. `jwt_issuer`가 설정되어야 하며, 각 라우트는 `Authorization` 헤더의 JWT를 검증한 뒤 Lambda로 전달한다. 핸들러는 `requestContext.authorizer.jwt.claims.sub`로 소유자를 식별한다.
+
+`jwt_issuer`가 `null`(기본값)이면 authorizer와 보호 라우트를 **생성하지 않는다**. 따라서 auth 배선처럼 공개 전용으로 쓸 때는 기존과 동일하게 동작한다(하위호환).
+
+- `jwt_issuer`는 스킴을 포함한 전체 URL이어야 한다. Cognito는 `"https://${module.cognito.issuer_url}"` 형태로 넘긴다(`issuer_url`은 스킴이 없으므로 `https://`를 접두).
+- `jwt_audiences`에는 Cognito App Client ID를 넣는다.
+
 ## 주의
 
 - `certificate_arn`이 가리키는 인증서가 `domain_name`을 커버해야 한다(SAN 포함). 그렇지 않으면 TLS 검증이 실패한다.
@@ -42,7 +57,10 @@
 | `name` | 리소스 이름 접두사 (예: `urlshortener-auth`). | `string` | — | 예 |
 | `lambda_invoke_arn` | 통합할 Lambda의 invoke ARN. lambda 모듈의 `invoke_arn`. | `string` | — | 예 |
 | `lambda_function_name` | 호출 권한을 부여할 Lambda 함수 이름. lambda 모듈의 `function_name`. | `string` | — | 예 |
-| `route_keys` | 등록할 라우트 키 목록 (`"METHOD /path"`). | `list(string)` | auth 6개 라우트 | 아니오 |
+| `route_keys` | 등록할 공개 라우트 키 목록 (`"METHOD /path"`). authorizer 없이 노출. | `list(string)` | auth 6개 라우트 | 아니오 |
+| `protected_route_keys` | JWT authorizer를 적용할 보호 라우트 키 목록. `jwt_issuer` 필요. | `list(string)` | `[]` | 아니오 |
+| `jwt_issuer` | JWT authorizer issuer URL(https:// 포함). `null`이면 authorizer 미생성. | `string` | `null` | 아니오 |
+| `jwt_audiences` | JWT authorizer 허용 audience 목록(Cognito App Client ID). | `list(string)` | `[]` | 아니오 |
 | `cors_allow_origins` | CORS 허용 Origin 목록. | `list(string)` | `["*"]` | 아니오 |
 | `cors_allow_methods` | CORS 허용 메서드 목록. | `list(string)` | `["POST","OPTIONS"]` | 아니오 |
 | `cors_allow_headers` | CORS 허용 헤더 목록. | `list(string)` | `["content-type","authorization"]` | 아니오 |

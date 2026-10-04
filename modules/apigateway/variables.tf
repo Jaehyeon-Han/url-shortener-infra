@@ -18,7 +18,7 @@ variable "lambda_function_name" {
 # --- 라우트 ---
 
 variable "route_keys" {
-  description = "API에 등록할 라우트 키 목록이다 (\"METHOD /path\" 형식). 각 라우트는 동일한 Lambda 통합으로 연결된다."
+  description = "API에 등록할 라우트 키 목록이다 (\"METHOD /path\" 형식). 각 라우트는 동일한 Lambda 통합으로 연결된다. authorizer 없이 공개로 노출된다."
   type        = list(string)
   default = [
     "POST /auth/signup",
@@ -28,6 +28,26 @@ variable "route_keys" {
     "POST /auth/refresh",
     "POST /auth/logout",
   ]
+}
+
+# --- JWT authorizer (선택) ---
+
+variable "jwt_issuer" {
+  description = "JWT authorizer의 issuer URL이다(스킴 https:// 포함). null이면 authorizer를 만들지 않는다(기본 공개 API). Cognito는 \"https://<user_pool_endpoint>\"다."
+  type        = string
+  default     = null
+}
+
+variable "jwt_audiences" {
+  description = "JWT authorizer가 허용할 audience 목록이다. Cognito App Client ID를 넣는다. jwt_issuer가 설정될 때만 의미가 있다."
+  type        = list(string)
+  default     = []
+}
+
+variable "protected_route_keys" {
+  description = "JWT authorizer를 적용할 보호 라우트 키 목록이다 (\"METHOD /path\" 형식). jwt_issuer가 설정되어야 하며, 각 라우트는 Authorization 헤더의 JWT 검증을 거친다."
+  type        = list(string)
+  default     = []
 }
 
 # --- CORS ---

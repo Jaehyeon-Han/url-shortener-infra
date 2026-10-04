@@ -21,9 +21,10 @@ AWS 기반 서버리스 URL 단축 서비스의 인프라를 Terraform으로 관
 
 ## 현재 구현 상태
 
-- 구현됨: `bootstrap`(state용 S3 버킷), `modules/cognito`(사용자 인증), `modules/artifacts`(Lambda 코드 zip 보관 버킷), `modules/lambda`(재사용 Node.js Lambda 모듈, 루트에 `auth` 함수 배선), `modules/certificate`(루트 도메인 TLS 인증서 발급 + `auth.<domain>` SAN + Porkbun DNS 검증 자동화), `modules/apigateway`(auth Lambda 앞단 HTTP API v2 + `auth.<domain>` 커스텀 도메인 + Porkbun CNAME), `modules/dynamodb`(URL/통계 단일 테이블, PK/SK + GSI1/GSI2, 온디맨드, PITR 활성).
+- 구현됨: `bootstrap`(state용 S3 버킷), `modules/cognito`(사용자 인증), `modules/artifacts`(Lambda 코드 zip 보관 버킷), `modules/lambda`(재사용 Node.js Lambda 모듈, 루트에 `auth`/`url` 함수 배선), `modules/certificate`(루트 도메인 TLS 인증서 발급 + `auth.<domain>`/`short.<domain>` SAN + Porkbun DNS 검증 자동화), `modules/apigateway`(HTTP API v2 재사용 모듈 — auth API(`auth.<domain>`, 공개)와 URL API(`short.<domain>`, 공개 리다이렉트 + Cognito JWT 보호 라우트) 배선, Porkbun CNAME), `modules/dynamodb`(URL/통계 단일 테이블, PK/SK + GSI1/GSI2, 온디맨드, PITR 활성).
 - 데이터 저장소: URL/통계는 `modules/dynamodb` 단일 테이블(싱글 테이블 디자인)을 채택한다. Aurora Serverless는 쓰지 않는다.
-- 미구현: 단축/리다이렉트/통계 Lambda 함수는 아직 없다(`modules/lambda`를 재사용해 추가하며, `modules/dynamodb`의 `table_name`을 env, `table_arn`을 IAM 대상으로 주입한다).
+- URL Lambda(`url`): 단축/목록/통계/비활성/리다이렉트 핸들러를 `modules/lambda`로 배선했다. `modules/dynamodb`의 `table_name`을 `TABLE_NAME` env로, `table_arn`(+`index/*`)을 IAM 대상으로 주입한다. 코드 소스는 `url/function.zip` 키이며 handler는 `src/handlers/urls.handler`다. 앞단 API는 `short.<domain>` 커스텀 도메인으로, 공개 `GET /{code}`(리다이렉트)와 보호 `/urls*`(Cognito JWT authorizer)로 구성한다.
+- 미구현: 핸들러 실제 코드는 별도 레포 CI가 `update-function-code`로 배포한다. 악성 URL 상태 전이(PENDING/BLOCKED) 워크플로는 테이블/GSI2만 준비됐고 로직은 미구현이다.
 
 ## 문서 규칙
 

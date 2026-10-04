@@ -60,6 +60,56 @@ module "lambda_auth" {
   }
 }
 
+# URL/통계/리다이렉트 Lambda의 실행 역할에 부착할 DynamoDB 권한이다.
+# 핸들러(lib/url-repo.mjs, lib/dynamo.mjs)가 단일 테이블에 수행하는 데이터플레인 작업에 맞춘다.
+#   - 생성: PutItem (URL 메타/카운터/쿼터)
+#   - 리다이렉트(핫패스): GetItem (URL 메타)
+#   - 비활성/카운터 증가: UpdateItem
+#   - 목록/통계: Query (GSI1=소유자별, GSI2=상태별, 기본 테이블 SK range)
+# 테이블 본체와 모든 보조 인덱스(index/*)를 대상으로 한다(GSI 쿼리에 index/* 필요).
+# 관리플레인(CreateTable 등) 액션은 포함하지 않는다.
+data "aws_iam_policy_document" "url" {
+  statement {
+    sid = "DynamoSingleTableAccess"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:Query",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:ConditionCheckItem",
+    ]
+    resources = [
+      module.dynamodb.table_arn,
+      "${module.dynamodb.table_arn}/index/*",
+    ]
+  }
+}
+
+# URL 단축/목록/통계/비활성/리다이렉트를 담당하는 Lambda 함수다.
+# 함수 내부 핸들러가 세부 라우팅을 담당하며, 단일 테이블(DynamoDB)을 데이터 저장소로 쓴다.
+# API Gateway 연결은 별도 단계에서 추가한다(이 함수는 아직 공개 엔드포인트에 물려 있지 않다).
+module "lambda_url" {
+  source = "./modules/lambda"
+
+  name = "${var.name}-url"
+  # CI가 프로젝트 루트 전체를 zip으로 압축하므로 zip 내부 경로는 src/ 접두가 붙는다.
+  # 소스는 src/handlers/urls.mjs 이며, zip 루트 기준 핸들러는 src/handlers/urls.handler 다.
+  handler = "src/handlers/urls.handler"
+
+  artifact_bucket = module.artifacts.bucket_id
+  s3_key          = "url/function.zip"
+
+  inline_policy_json = data.aws_iam_policy_document.url.json
+
+  # 핸들러(lib/dynamo.mjs)는 TABLE_NAME 환경변수로 대상 테이블을 읽는다.
+  environment = {
+    TABLE_NAME = module.dynamodb.table_name
+  }
+}
+
 # 루트 도메인 TLS 인증서를 발급/검증한다.
 # 인증서 발급(ACM) + 검증 CNAME 생성(Porkbun) + 검증 완료 대기를 한 모듈에 응집한다.
 # porkbun provider는 루트에서 정의해 모듈로 전달한다.
@@ -69,9 +119,9 @@ module "certificate" {
   name        = var.name
   domain_name = var.domain_name
 
-  # 인증 API 커스텀 도메인(auth.<domain>)을 같은 인증서로 커버한다.
-  # 모듈은 서브도메인을 조립하지 않으므로 완전한 도메인 문자열을 넘긴다.
-  subject_alternative_names = ["auth.${var.domain_name}"]
+  # 인증 API(auth.<domain>)와 URL 리다이렉트 API(short.<domain>) 커스텀 도메인을
+  # 같은 인증서로 커버한다. 모듈은 서브도메인을 조립하지 않으므로 완전한 도메인 문자열을 넘긴다.
+  subject_alternative_names = ["auth.${var.domain_name}", "short.${var.domain_name}"]
 
   providers = {
     porkbun = porkbun
@@ -92,6 +142,47 @@ module "apigateway" {
   # certificate 모듈이 SAN으로 auth.<domain>을 커버한다.
   certificate_arn = module.certificate.certificate_arn
   domain_name     = "auth.${var.domain_name}"
+  porkbun_domain  = var.domain_name
+
+  providers = {
+    porkbun = porkbun
+  }
+}
+
+# URL Lambda 앞단의 HTTP API(v2)다. 같은 apigateway 모듈을 재사용한다.
+# - 공개 라우트: GET /{code} (리다이렉트 핫패스, authorizer 없음)
+# - 보호 라우트: /urls* (Cognito JWT authorizer로 보호, 핸들러가 claims.sub로 소유자 식별)
+# 커스텀 도메인은 short.<domain>이며, 루트(<domain>)는 다른 API가 ALIAS로 점유 중이라 쓰지 않는다.
+module "apigateway_url" {
+  source = "./modules/apigateway"
+
+  name = "${var.name}-url"
+
+  lambda_invoke_arn    = module.lambda_url.invoke_arn
+  lambda_function_name = module.lambda_url.function_name
+
+  # 공개(authorizer 없음): 리다이렉트.
+  route_keys = ["GET /{code}"]
+
+  # 보호(JWT authorizer 적용): 생성/목록/통계/비활성.
+  protected_route_keys = [
+    "POST /urls",
+    "GET /urls",
+    "GET /urls/{code}/stats",
+    "POST /urls/{code}/disable",
+  ]
+
+  # Cognito JWT authorizer. issuer는 스킴(https://)을 포함해야 한다.
+  # cognito 모듈의 issuer_url(=user pool endpoint)은 스킴이 없으므로 접두한다.
+  jwt_issuer    = "https://${module.cognito.issuer_url}"
+  jwt_audiences = [module.cognito.user_pool_client_id]
+
+  # 리다이렉트(GET)와 /urls(GET/POST)를 모두 허용한다.
+  cors_allow_methods = ["GET", "POST", "OPTIONS"]
+
+  # certificate 모듈이 SAN으로 short.<domain>을 커버한다.
+  certificate_arn = module.certificate.certificate_arn
+  domain_name     = "short.${var.domain_name}"
   porkbun_domain  = var.domain_name
 
   providers = {

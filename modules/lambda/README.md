@@ -31,7 +31,7 @@
 | `handler` | 핸들러 진입점. `<zip 내부 경로>.<export명>` 형식 (예: `handlers/auth.handler`). | `string` | - | 예 |
 | `artifact_bucket` | 코드 zip이 저장된 아티팩트 버킷 이름. | `string` | - | 예 |
 | `s3_key` | 아티팩트 버킷 내 코드 zip 키 (예: `auth/function.zip`). | `string` | - | 예 |
-| `runtime` | Lambda 런타임. | `string` | `nodejs20.x` | 아니오 |
+| `runtime` | Lambda 런타임. | `string` | `nodejs24.x` | 아니오 |
 | `memory_size` | 메모리(MB). | `number` | `128` | 아니오 |
 | `timeout` | 타임아웃(초). | `number` | `10` | 아니오 |
 | `environment` | 환경 변수 맵. | `map(string)` | `{}` | 아니오 |
