@@ -9,6 +9,7 @@ Url 단축기를 위한 AWS 인프라 설정이다.
 3. lambda: 재사용 가능한 Node.js(mjs) Lambda 함수 모듈이다.
 4. certificate: 루트 도메인 TLS 인증서를 ACM으로 발급하고 Porkbun DNS로 검증을 자동화한다. `auth.<domain>`을 SAN으로 함께 커버한다.
 5. apigateway: 인증 Lambda 앞단의 HTTP API(v2)다. auth 라우트를 노출하고 `auth.<domain>` 커스텀 도메인 + TLS를 연결하며, 해당 CNAME을 Porkbun DNS에 생성한다.
+6. dynamodb: URL/통계 데이터를 담는 단일 테이블(싱글 테이블 디자인)이다. PK/SK + GSI1(소유자별 목록)/GSI2(상태별 조회), 온디맨드 과금, PITR 활성이다.
 
 ## 문서
 - 각 모듈의 상세(목적/Inputs/Outputs)는 해당 `modules/<name>/README.md`를 참고한다.

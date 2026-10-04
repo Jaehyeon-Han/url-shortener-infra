@@ -11,6 +11,14 @@ module "artifacts" {
   name = var.name
 }
 
+# URL/통계 데이터를 담는 단일 테이블(싱글 테이블 디자인)이다.
+# 추후 단축/리다이렉트/통계 Lambda가 이 테이블명(env)과 ARN(IAM 정책 대상)을 참조한다.
+module "dynamodb" {
+  source = "./modules/dynamodb"
+
+  name = var.name
+}
+
 # 인증(auth) Lambda의 실행 역할에 부착할 세밀 권한이다.
 # auth 핸들러가 호출하는 Cognito API에 맞춘 최소 권한이다.
 #   SignUp / ConfirmSignUp / ResendConfirmationCode / InitiateAuth / GlobalSignOut

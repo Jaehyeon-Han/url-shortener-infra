@@ -4,6 +4,18 @@ output "artifact_bucket" {
   value       = module.artifacts.bucket_id
 }
 
+# URL/통계 데이터를 담는 DynamoDB 단일 테이블 이름이다. Lambda 환경변수로 주입한다.
+output "url_shortener_table_name" {
+  description = "URL/통계 단일 테이블 이름."
+  value       = module.dynamodb.table_name
+}
+
+# 위 테이블의 ARN이다. Lambda 실행 역할 IAM 정책 대상으로 사용한다(GSI 쿼리 시 index/* 조합 필요).
+output "url_shortener_table_arn" {
+  description = "URL/통계 단일 테이블 ARN."
+  value       = module.dynamodb.table_arn
+}
+
 # 인증 Lambda 함수 이름이다. CI는 이 이름으로 update-function-code를 호출한다.
 output "auth_function_name" {
   description = "인증 Lambda 함수 이름."
