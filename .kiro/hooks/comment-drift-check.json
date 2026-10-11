@@ -1,0 +1,15 @@
+{
+  "name": "comment-drift-check",
+  "description": "plan의 task를 모두 끝내고 턴이 종료될 때, 변경된 .tf 파일의 코드-주석 drift 검토 대상을 수집해 보고하는 hook이다.",
+  "hooks": [
+    {
+      "name": "comment-drift-check",
+      "trigger": "stop",
+      "action": {
+        "type": "command",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \".kiro/hooks/comment-drift-check.ps1\""
+      },
+      "timeout": 60
+    }
+  ]
+}

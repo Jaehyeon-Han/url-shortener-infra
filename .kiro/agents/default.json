@@ -1,0 +1,15 @@
+{
+  "name": "default",
+  "description": "URL 단축 서비스 인프라 작업용 기본 에이전트다. 작업 종료 시 주석-코드 drift를 검토하는 hook을 포함한다.",
+  "hooks": [
+    {
+      "name": "comment-drift-check",
+      "trigger": "stop",
+      "action": {
+        "type": "command",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \".kiro/hooks/comment-drift-check.ps1\""
+      },
+      "timeout": 60
+    }
+  ]
+}
