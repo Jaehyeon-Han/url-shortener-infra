@@ -90,7 +90,6 @@ data "aws_iam_policy_document" "url" {
 
 # URL 단축/목록/통계/비활성/리다이렉트를 담당하는 Lambda 함수다.
 # 함수 내부 핸들러가 세부 라우팅을 담당하며, 단일 테이블(DynamoDB)을 데이터 저장소로 쓴다.
-# API Gateway 연결은 별도 단계에서 추가한다(이 함수는 아직 공개 엔드포인트에 물려 있지 않다).
 module "lambda_url" {
   source = "./modules/lambda"
 
@@ -100,7 +99,7 @@ module "lambda_url" {
   handler = "src/handlers/urls.handler"
 
   artifact_bucket = module.artifacts.bucket_id
-  s3_key          = "url/function.zip"
+  s3_key          = "urls/function.zip"
 
   inline_policy_json = data.aws_iam_policy_document.url.json
 
