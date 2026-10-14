@@ -49,6 +49,10 @@ Lambda 앞단에 두는 HTTP API(v2)를 구성한다.
 - `porkbun` provider는 서드파티(비공식)이며, `plan`/`apply`가 **실제 Porkbun DNS를 변경**한다.
   provider 설정(자격증명)은 루트에서 정의해 `providers = { porkbun = porkbun }`로 이 모듈에 전달한다.
 - 커스텀 도메인은 CNAME 전파 전까지 조회되지 않는다. 전파 전에는 `api_endpoint`(execute-api URL)로 접근한다.
+- **Lambda Alias 연동**: Alias를 통해 호출하려면 호출부가 `lambda_invoke_arn`에
+  **alias-qualified invoke ARN**(lambda 모듈의 `integration_invoke_arn`)을 넘기고,
+  `lambda_qualifier`에 alias 이름(lambda 모듈의 `qualifier`)을 넘겨야 한다.
+  둘 중 하나만 alias를 가리키면 호출 권한이 불일치해 403이 발생한다.
 
 ## Inputs
 
@@ -57,6 +61,7 @@ Lambda 앞단에 두는 HTTP API(v2)를 구성한다.
 | `name` | 리소스 이름 접두사 (예: `urlshortener-auth`). | `string` | — | 예 |
 | `lambda_invoke_arn` | 통합할 Lambda의 invoke ARN. lambda 모듈의 `invoke_arn`. | `string` | — | 예 |
 | `lambda_function_name` | 호출 권한을 부여할 Lambda 함수 이름. lambda 모듈의 `function_name`. | `string` | — | 예 |
+| `lambda_qualifier` | 호출 권한을 한정할 qualifier(alias 이름/버전). Alias 호출 시 lambda 모듈의 `qualifier`를 넘긴다. `null`이면 비한정($LATEST). | `string` | `null` | 아니오 |
 | `route_keys` | 등록할 공개 라우트 키 목록 (`"METHOD /path"`). authorizer 없이 노출. | `list(string)` | auth 6개 라우트 | 아니오 |
 | `protected_route_keys` | JWT authorizer를 적용할 보호 라우트 키 목록. `jwt_issuer` 필요. | `list(string)` | `[]` | 아니오 |
 | `jwt_issuer` | JWT authorizer issuer URL(https:// 포함). `null`이면 authorizer 미생성. | `string` | `null` | 아니오 |

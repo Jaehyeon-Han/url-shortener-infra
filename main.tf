@@ -52,6 +52,15 @@ module "lambda_auth" {
   artifact_bucket = module.artifacts.bucket_id
   s3_key          = "auth/function.zip"
 
+  # Alias(live)를 통해 호출한다. auth는 CodeDeploy AllAtOnce로 신규 버전에
+  # 전환하며, Lambda Errors / API Gateway 5xx 알람이 울리면 자동 롤백한다.
+  # (Canary는 url만. auth는 점진 전환이 불필요해 AllAtOnce로 단순화한다.)
+  enable_alias = true
+
+  # 핸들러가 catch에서 커스텀 에러 지표(UrlShortener/App HandlerErrors)를 발행하므로,
+  # 실행 역할에 해당 네임스페이스 한정 PutMetricData 권한을 부여한다.
+  metrics_namespace = "UrlShortener/App"
+
   inline_policy_json = data.aws_iam_policy_document.auth.json
 
   # auth 핸들러는 App Client ID로 Cognito API를 호출한다.
@@ -101,6 +110,14 @@ module "lambda_url" {
   artifact_bucket = module.artifacts.bucket_id
   s3_key          = "urls/function.zip"
 
+  # Alias(live)를 통해 호출한다. url은 CodeDeploy Canary(10%/30분)로 전환하며
+  # 알람 발생 시 자동 롤백한다. CI가 버전 publish 후 CodeDeploy 배포를 트리거한다.
+  enable_alias = true
+
+  # 핸들러가 catch에서 커스텀 에러 지표(UrlShortener/App HandlerErrors)를 발행하므로,
+  # 실행 역할에 해당 네임스페이스 한정 PutMetricData 권한을 부여한다.
+  metrics_namespace = "UrlShortener/App"
+
   inline_policy_json = data.aws_iam_policy_document.url.json
 
   # 핸들러(lib/dynamo.mjs)는 TABLE_NAME 환경변수로 대상 테이블을 읽는다.
@@ -135,8 +152,9 @@ module "apigateway" {
 
   name = "${var.name}-auth"
 
-  lambda_invoke_arn    = module.lambda_auth.invoke_arn
+  lambda_invoke_arn    = module.lambda_auth.integration_invoke_arn
   lambda_function_name = module.lambda_auth.function_name
+  lambda_qualifier     = module.lambda_auth.qualifier
 
   # certificate 모듈이 SAN으로 auth.<domain>을 커버한다.
   certificate_arn = module.certificate.certificate_arn
@@ -157,8 +175,9 @@ module "apigateway_url" {
 
   name = "${var.name}-url"
 
-  lambda_invoke_arn    = module.lambda_url.invoke_arn
+  lambda_invoke_arn    = module.lambda_url.integration_invoke_arn
   lambda_function_name = module.lambda_url.function_name
+  lambda_qualifier     = module.lambda_url.qualifier
 
   # 공개(authorizer 없음): 리다이렉트.
   route_keys = ["GET /{code}"]
@@ -187,4 +206,66 @@ module "apigateway_url" {
   providers = {
     porkbun = porkbun
   }
+}
+
+# URL 함수의 CodeDeploy Canary 배포 설정이다.
+# live Alias의 트래픽을 10%씩 30분에 걸쳐 신규 버전으로 옮기고,
+# Lambda Errors / API Gateway 5xx 알람이 울리면 자동 롤백한다.
+# 롤백/실패 이벤트와 알람은 SNS로 운영 담당자에게 통지된다.
+# 실제 배포 트리거(create-deployment)는 CI가 수행한다.
+module "codedeploy_url" {
+  source = "./modules/codedeploy"
+
+  name = "${var.name}-url"
+
+  lambda_function_name = module.lambda_url.function_name
+  lambda_alias_name    = module.lambda_url.alias_name
+
+  # URL API의 5xx 지표를 상시 운영 알람으로 둔다(자동 롤백 기준 아님).
+  api_id = module.apigateway_url.api_id
+
+  # Canary 10%/30분. (CodeDeployDefault.LambdaCanary10Percent30Minutes가 기본값)
+  deployment_config_name = "CodeDeployDefault.LambdaCanary10Percent30Minutes"
+
+  # Canary는 신/구 버전이 공존하므로, 신버전만 가드하도록 ExecutedVersion 동적 알람을 쓴다.
+  # Terraform은 고정 이름 알람만 만들고, CI가 배포 직전 PutMetricAlarm으로 신버전 차원을 갱신한다.
+  errors_alarm_mode = "executed_version"
+
+  # 핸들러가 try/catch로 예외를 삼키고 500을 정상 리턴하는 구조라, AWS/Lambda Errors는
+  # 0이라 롤백이 안 걸린다. 핸들러가 PutMetricData로 올리는 커스텀 메트릭을 기준으로 삼는다.
+  # (핸들러는 catch에서 UrlShortener/App 네임스페이스에 HandlerErrors=1을 발행해야 한다.)
+  error_namespace   = "UrlShortener/App"
+  error_metric_name = "HandlerErrors"
+
+  notification_emails = var.deploy_notification_emails
+}
+
+# auth 함수의 CodeDeploy 배포 설정이다. url과 동일한 모듈을 재사용하되,
+# 점진 전환이 불필요하므로 전략만 AllAtOnce로 다르게 준다.
+# live Alias를 신규 버전으로 한 번에 전환하고, Lambda Errors / auth API 5xx 알람이
+# 울리면 자동 롤백한다. 롤백/실패/알람은 SNS로 통지된다.
+# 배포 경로를 CodeDeploy 단일로 통일해 CI 로직과 운영 모델을 일관화한다.
+module "codedeploy_auth" {
+  source = "./modules/codedeploy"
+
+  name = "${var.name}-auth"
+
+  lambda_function_name = module.lambda_auth.function_name
+  lambda_alias_name    = module.lambda_auth.alias_name
+
+  # auth API의 5xx 지표를 상시 운영 알람으로 둔다(자동 롤백 기준 아님).
+  api_id = module.apigateway.api_id
+
+  # AllAtOnce: 전량 전환 후 알람으로 롤백 여부를 판단한다.
+  deployment_config_name = "CodeDeployDefault.LambdaAllAtOnce"
+
+  # 전량 전환이라 버전 분리가 불필요하므로 alias 차원 정적 알람을 쓴다(CI 갱신 불필요).
+  errors_alarm_mode = "alias"
+
+  # auth 핸들러도 try/catch로 500을 정상 리턴하는 구조라면 AWS/Lambda Errors가 0이다.
+  # url과 동일하게 핸들러가 발행하는 커스텀 메트릭(UrlShortener/App HandlerErrors)을 기준으로 삼는다.
+  error_namespace   = "UrlShortener/App"
+  error_metric_name = "HandlerErrors"
+
+  notification_emails = var.deploy_notification_emails
 }

@@ -1,0 +1,74 @@
+# .github/workflows/cicd.yml (참고용 — 코드(핸들러) 레포에 둔다)
+#
+# 기존 워크플로의 deploy 잡 "배포 경로"만 교체한 버전이다.
+# detect-changes / gate / 핸들러 테스트 부분은 기존과 동일하므로 생략한다.
+#
+# 핵심:
+#   - 기존 "update-function-code --publish 한 방"을 scripts/deploy.mjs 호출로 교체한다.
+#   - 두 함수 모두 CodeDeploy로 전환한다(비블로킹). Canary/AllAtOnce 차이는
+#     Terraform이 배포 그룹에 박아둔 설정이 결정하므로 CI는 동일 경로(scripts/deploy.mjs)를 쓴다.
+#   - url은 Canary 신버전 가드를 위해 deploy.mjs가 배포 직전 롤백 알람을
+#     ExecutedVersion=신버전으로 갱신(PutMetricAlarm)한다. auth는 정적 알람이라 갱신 없음.
+#   - 전환/알람 감시/자동 롤백은 CodeDeploy가 수행하고, 롤백/실패는 SNS로 통지된다.
+#     따라서 CI는 "배포 트리거"까지만 책임지고 30분 블로킹하지 않는다.
+#
+# 에러 지표(중요): 핸들러가 try/catch로 500을 정상 리턴하는 구조라 AWS/Lambda Errors가 0이다.
+#   그래서 핸들러가 PutMetricData로 커스텀 메트릭(UrlShortener/App HandlerErrors)을 발행하고
+#   (ci-reference/handler-metric.mjs 참고), 롤백 알람은 그 지표를 본다.
+#
+# GitHub 변수(vars)/시크릿:
+#   vars.LAMBDA_DEPLOY_MAP      핸들러->배포 설정 매핑(JSON). `terraform output -raw lambda_deploy_map`로 생성.
+#   vars.LAMBDA_ARTIFACT_BUCKET 아티팩트 버킷.
+#   vars.AWS_REGION             리전.
+#   secrets.AWS_DEPLOY_ROLE_ARN OIDC assume 역할.
+#
+# ── 권한은 "두 역할"로 나뉜다 (혼동 주의) ──
+#
+# (1) CI 배포 역할 (GitHub OIDC로 assume): deploy.mjs가 호출하는 권한
+#     lambda:UpdateFunctionCode, lambda:PublishVersion, lambda:GetAlias,
+#     cloudwatch:PutMetricAlarm (url ExecutedVersion 알람 갱신),
+#     codedeploy:CreateDeployment, codedeploy:GetDeployment, codedeploy:GetDeploymentConfig,
+#     iam:PassRole (CodeDeploy 서비스 역할 대상), s3:PutObject.
+#     (alias 전환은 CodeDeploy 서비스 역할이 하므로 lambda:UpdateAlias는 불필요.)
+#
+# (2) 함수 "실행 역할" (Lambda가 런타임에 사용): 핸들러가 커스텀 메트릭을 발행하는 권한
+#     cloudwatch:PutMetricData
+#     → 이건 CI가 아니라 modules/lambda의 실행 역할에 부여해야 한다(인프라 레포 쪽).
+
+# --- deploy 잡의 배포 경로 스텝(핸들러 테스트 이후)만 발췌 ---
+
+      - name: Package function (src transitive closure only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/package.mjs "${{ matrix.handler }}"
+          ls -l "dist/${{ matrix.handler }}/function.zip"
+
+      - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Upload artifact to S3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "dist/${{ matrix.handler }}/function.zip" \
+            "s3://${BUCKET}/${{ matrix.handler }}/function.zip"
+
+      # 코드 갱신 + 버전 publish + (url) 알람 갱신 + CodeDeploy 트리거를 한 스크립트로 처리.
+      - name: Deploy via CodeDeploy (non-blocking)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          DEPLOY_MAP: ${{ vars.LAMBDA_DEPLOY_MAP }}
+          BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          HANDLER: ${{ matrix.handler }}
+        run: node scripts/deploy.mjs "$HANDLER"

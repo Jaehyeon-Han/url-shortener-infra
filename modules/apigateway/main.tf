@@ -88,6 +88,10 @@ resource "aws_lambda_permission" "apigw" {
   function_name = var.lambda_function_name
   principal     = "apigateway.amazonaws.com"
 
+  # Alias를 통해 호출하는 경우 해당 alias로 권한을 한정한다.
+  # null이면 비한정($LATEST 포함)으로 부여한다.
+  qualifier = var.lambda_qualifier
+
   # 이 API의 모든 스테이지/메서드/경로에서의 호출을 허용한다.
   source_arn = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }

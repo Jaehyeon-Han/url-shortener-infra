@@ -57,3 +57,92 @@ output "url_api_endpoint" {
   description = "URL API 기본 실행 엔드포인트(execute-api URL)."
   value       = module.apigateway_url.api_endpoint
 }
+
+# --- 배포(Alias/CodeDeploy) ---
+
+# URL 함수의 트래픽을 가리키는 Alias 이름이다. CI/CodeDeploy 전환 대상으로 쓴다.
+output "url_alias_name" {
+  description = "URL 함수 Alias 이름(live)."
+  value       = module.lambda_url.alias_name
+}
+
+# auth 함수의 Alias 이름이다. CI가 CodeDeploy(AllAtOnce)로 이 alias를 전환한다.
+output "auth_alias_name" {
+  description = "auth 함수 Alias 이름(live)."
+  value       = module.lambda_auth.alias_name
+}
+
+# URL 함수의 CodeDeploy 애플리케이션 이름이다. CI의 create-deployment에 사용한다.
+output "url_codedeploy_app_name" {
+  description = "URL 함수 CodeDeploy 애플리케이션 이름."
+  value       = module.codedeploy_url.app_name
+}
+
+# URL 함수의 CodeDeploy 배포 그룹 이름이다. CI의 create-deployment에 사용한다.
+output "url_codedeploy_deployment_group_name" {
+  description = "URL 함수 CodeDeploy 배포 그룹 이름."
+  value       = module.codedeploy_url.deployment_group_name
+}
+
+# auth 함수의 CodeDeploy 애플리케이션 이름이다. CI의 create-deployment에 사용한다.
+output "auth_codedeploy_app_name" {
+  description = "auth 함수 CodeDeploy 애플리케이션 이름."
+  value       = module.codedeploy_auth.app_name
+}
+
+# auth 함수의 CodeDeploy 배포 그룹 이름이다. CI의 create-deployment에 사용한다.
+output "auth_codedeploy_deployment_group_name" {
+  description = "auth 함수 CodeDeploy 배포 그룹 이름."
+  value       = module.codedeploy_auth.deployment_group_name
+}
+
+# URL 함수 배포 롤백/실패 및 알람을 통지하는 SNS 토픽 ARN이다.
+output "url_deploy_notify_topic_arn" {
+  description = "URL 함수 CodeDeploy 롤백/실패 및 알람 통지 SNS 토픽 ARN."
+  value       = module.codedeploy_url.sns_topic_arn
+}
+
+# auth 함수 배포 롤백/실패 및 알람을 통지하는 SNS 토픽 ARN이다.
+output "auth_deploy_notify_topic_arn" {
+  description = "auth 함수 CodeDeploy 롤백/실패 및 알람 통지 SNS 토픽 ARN."
+  value       = module.codedeploy_auth.sns_topic_arn
+}
+
+# URL 함수의 자동 롤백 기준 Lambda Errors 알람 이름이다.
+# url은 executed_version 모드이므로, CI가 배포 직전 이 이름으로 PutMetricAlarm(upsert)해
+# 신버전(ExecutedVersion) 차원으로 갱신한다.
+output "url_errors_alarm_name" {
+  description = "URL 함수 자동 롤백 기준 Lambda Errors 알람 이름(CI가 PutMetricAlarm으로 신버전 차원 갱신)."
+  value       = module.codedeploy_url.errors_alarm_name
+}
+
+# CI의 LAMBDA_DEPLOY_MAP(GitHub Actions variable)에 그대로 넣을 JSON이다.
+# `terraform output -raw lambda_deploy_map`으로 뽑아 복사한다.
+# 최상위 키는 CI 매트릭스 핸들러 이름(url_handler_key/auth_handler_key)이다.
+# - url: executed_version 모드이므로 errors_alarm_name/notify_topic_arn/임계값을 포함한다.
+# - auth: alias 모드이므로 알람 갱신 관련 키는 생략한다(CI가 요구하지 않음).
+output "lambda_deploy_map" {
+  description = "CI LAMBDA_DEPLOY_MAP variable에 넣을 핸들러->배포 설정 매핑 JSON."
+  value = jsonencode({
+    (var.url_handler_key) = {
+      function          = module.lambda_url.function_name
+      alias             = module.lambda_url.alias_name
+      codedeploy_app    = module.codedeploy_url.app_name
+      codedeploy_group  = module.codedeploy_url.deployment_group_name
+      errors_alarm_mode = module.codedeploy_url.errors_alarm_mode
+      errors_alarm_name = module.codedeploy_url.errors_alarm_name
+      error_namespace   = module.codedeploy_url.error_namespace
+      error_metric_name = module.codedeploy_url.error_metric_name
+      notify_topic_arn  = module.codedeploy_url.sns_topic_arn
+      alarm_threshold   = module.codedeploy_url.alarm_threshold
+      alarm_period      = module.codedeploy_url.alarm_period_seconds
+    }
+    (var.auth_handler_key) = {
+      function          = module.lambda_auth.function_name
+      alias             = module.lambda_auth.alias_name
+      codedeploy_app    = module.codedeploy_auth.app_name
+      codedeploy_group  = module.codedeploy_auth.deployment_group_name
+      errors_alarm_mode = module.codedeploy_auth.errors_alarm_mode
+    }
+  })
+}

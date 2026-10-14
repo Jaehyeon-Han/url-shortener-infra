@@ -48,6 +48,33 @@ resource "aws_iam_role_policy" "inline" {
   policy = var.inline_policy_json
 }
 
+# 핸들러가 커스텀 메트릭(에러 지표 등)을 발행할 수 있도록 PutMetricData 권한을 부여한다(선택).
+# metrics_namespace가 설정되면, 해당 네임스페이스로만 발행을 제한한다(최소 권한).
+# CodeDeploy 롤백이 이 커스텀 메트릭을 기준으로 할 때, 핸들러가 catch에서 지표를 올리는 데 쓴다.
+# (PutMetricData는 리소스 레벨 제한이 없고 cloudwatch:namespace 조건키로만 좁힐 수 있다.)
+data "aws_iam_policy_document" "metrics" {
+  count = var.metrics_namespace != null ? 1 : 0
+
+  statement {
+    sid       = "PublishCustomMetrics"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = [var.metrics_namespace]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "metrics" {
+  count  = var.metrics_namespace != null ? 1 : 0
+  name   = "${var.name}-metrics"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.metrics[0].json
+}
+
 # --- CloudWatch 로그 그룹 ---
 
 # 함수가 자동 생성하는 로그 그룹을 명시적으로 관리해 보존 기간을 통제한다.
@@ -123,6 +150,12 @@ resource "aws_lambda_function" "this" {
   s3_key            = var.s3_key
   s3_object_version = var.s3_object_version
 
+  # enable_alias일 때 Terraform이 최초 숫자 버전을 publish해 Alias가 가리킬 대상을 만든다.
+  # CodeDeploy는 $LATEST로는 트래픽 전환을 못 하므로, alias는 반드시 숫자 버전을 가리켜야 한다.
+  # 코드 소스(s3_key 등)는 ignore_changes로 무시하므로, Terraform이 만드는 버전은 사실상
+  # 최초 1개뿐이고 이후 버전 publish는 CI(update-function-code --publish)가 담당한다.
+  publish = var.enable_alias
+
   environment {
     variables = var.environment
   }
@@ -137,5 +170,25 @@ resource "aws_lambda_function" "this" {
   # 코드 갱신은 CI/CD가 담당한다. Terraform이 코드 소스를 되돌리지 않도록 고정으로 무시한다.
   lifecycle {
     ignore_changes = [s3_key, s3_object_version, source_code_hash]
+  }
+}
+
+# --- Alias (트래픽 전환 배포용) ---
+
+# enable_alias=true일 때 이동 가능한 Alias를 만든다.
+# 함수를 publish(publish=true)해 생긴 최초 숫자 버전을 가리키게 한다.
+# ($LATEST는 CodeDeploy 트래픽 전환 대상이 될 수 없으므로 숫자 버전이어야 한다.)
+# 이후 CI가 버전을 publish하고 CodeDeploy가 이 Alias를 신규 버전으로 옮긴다
+# (Canary/AllAtOnce는 배포 그룹 설정이 결정). 따라서 Terraform은 function_version 변화를
+# 무시해 운영 중 전환 결과를 되돌리지 않는다.
+resource "aws_lambda_alias" "this" {
+  count = var.enable_alias ? 1 : 0
+
+  name             = var.alias_name
+  function_name    = aws_lambda_function.this.function_name
+  function_version = aws_lambda_function.this.version
+
+  lifecycle {
+    ignore_changes = [function_version]
   }
 }

@@ -15,6 +15,18 @@ variable "lambda_function_name" {
   type        = string
 }
 
+variable "lambda_qualifier" {
+  description = <<-EOT
+    Lambda 호출 권한을 한정할 qualifier다(별칭 이름 또는 버전).
+    Alias를 통해 호출하는 경우 lambda 모듈의 alias_name(예: live)을 넘긴다.
+    null(기본)이면 비한정으로 권한을 부여한다($LATEST 직접 호출 구조와 하위 호환).
+    주의: integration_uri(lambda_invoke_arn)가 Alias를 가리키면 이 값도 해당 alias로
+    맞춰야 호출 권한이 일치해 403이 발생하지 않는다.
+  EOT
+  type        = string
+  default     = null
+}
+
 # --- 라우트 ---
 
 variable "route_keys" {

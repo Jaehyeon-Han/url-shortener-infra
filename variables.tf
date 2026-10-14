@@ -26,3 +26,27 @@ variable "porkbun_secret_key" {
   type        = string
   sensitive   = true
 }
+
+# CodeDeploy 배포 롤백/실패 및 알람을 통지받을 운영 담당자 이메일 목록이다.
+# 각 주소로 SNS 구독이 생성되며, 수신자는 확인(confirm) 메일 링크를 눌러야 알림을 받는다.
+# 민감하지는 않으나 운영 정보이므로 terraform.tfvars 등 로컬 변수로 주입한다.
+variable "deploy_notification_emails" {
+  description = "CodeDeploy 롤백/실패 및 알람 통지를 받을 이메일 목록."
+  type        = list(string)
+  default     = []
+}
+
+# CI 워크플로의 매트릭스 핸들러 이름이다. lambda_deploy_map 출력의 최상위 키로 쓰인다.
+# CI(affected.mjs)가 산출하는 핸들러 이름과 정확히 일치해야 한다.
+# 함수 이름(urlshortener-url 등)과 다른, 핸들러 식별자(핸들러 파일 베이스명)다.
+variable "url_handler_key" {
+  description = "URL 함수에 대응하는 CI 핸들러 이름(예: urls)."
+  type        = string
+  default     = "urls"
+}
+
+variable "auth_handler_key" {
+  description = "auth 함수에 대응하는 CI 핸들러 이름(예: auth)."
+  type        = string
+  default     = "auth"
+}

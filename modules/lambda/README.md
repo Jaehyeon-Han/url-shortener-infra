@@ -10,6 +10,25 @@
 - CloudWatch 로그 그룹(`/aws/lambda/<name>`, 보존 기간 지정)
 - 플레이스홀더 zip 업로드(`aws_s3_object`)
 - Lambda 함수(`aws_lambda_function`)
+- (선택) 이동 가능한 Alias(`aws_lambda_alias`, `enable_alias=true`일 때)
+
+## Alias 기반 트래픽 전환 (enable_alias)
+
+`enable_alias=true`면 이동 가능한 Alias(`alias_name`, 기본 `live`)를 만든다.
+API Gateway는 함수가 아니라 이 Alias를 호출하므로(호출부가 `integration_invoke_arn`을
+통합 URI로, `qualifier`를 권한 qualifier로 넘긴다), CI/CodeDeploy가 Alias의 트래픽을
+신규 버전으로 옮겨 Canary/AllAtOnce 전환을 수행할 수 있다.
+
+- **최초 상태**: Terraform이 함수를 `publish`해 최초 숫자 버전을 만들고, Alias가 그 버전을
+  가리키게 한다. CodeDeploy는 `$LATEST`로 트래픽 전환을 못 하므로 Alias는 반드시 숫자 버전을
+  가리켜야 한다. 코드 소스(`s3_key` 등)는 `ignore_changes`라 Terraform이 만드는 버전은 사실상
+  최초 1개뿐이고, 이후 버전 publish는 CI(`update-function-code --publish`)가 담당한다.
+- **전환**: 이후 CI가 publish한 버전으로 CodeDeploy가 Alias를 옮긴다
+  (Canary/AllAtOnce는 배포 그룹의 `deployment_config_name`이 결정).
+- **drift 회피**: Alias는 `lifecycle { ignore_changes = [function_version] }`를 적용해,
+  운영 중 전환 결과를 `terraform apply`가 되돌리지 않는다.
+
+`enable_alias=false`(기본)면 Alias를 만들지 않고 함수 `invoke_arn`을 그대로 노출한다(하위 호환).
 
 ## 코드 배포 방식
 
@@ -38,6 +57,9 @@
 | `s3_object_version` | 참조할 S3 객체 버전 ID. `null`이면 최신 버전 참조(권장). 버저닝 버킷에서 특정 버전 고정/롤백 시에만 명시. | `string` | `null` | 아니오 |
 | `inline_policy_json` | 실행 역할에 부착할 인라인 정책 JSON. | `string` | `null` | 아니오 |
 | `log_retention_days` | 로그 보존 기간(일). | `number` | `14` | 아니오 |
+| `enable_alias` | 이동 가능한 Alias를 만들지 여부. 트래픽 전환 배포(Canary/AllAtOnce)에 필요. | `bool` | `false` | 아니오 |
+| `alias_name` | 생성할 Alias 이름. `enable_alias=true`일 때만 의미. | `string` | `live` | 아니오 |
+| `metrics_namespace` | 설정 시 실행 역할에 해당 네임스페이스 한정 `cloudwatch:PutMetricData` 권한 부여. 핸들러가 커스텀 에러 지표를 발행할 때 사용. | `string` | `null` | 아니오 |
 
 ## Outputs
 
@@ -45,5 +67,10 @@
 |---|---|
 | `function_name` | 함수 이름. CI의 `update-function-code` 대상이다. |
 | `function_arn` | 함수 ARN. |
-| `invoke_arn` | 호출 ARN. API Gateway 통합에서 사용한다. |
+| `invoke_arn` | 함수 호출 ARN. |
+| `alias_name` | Alias 이름. `enable_alias=false`면 `null`. |
+| `alias_arn` | Alias ARN(함수:alias). `enable_alias=false`면 `null`. |
+| `alias_invoke_arn` | Alias를 가리키는 invoke ARN. `enable_alias=false`면 `null`. |
+| `integration_invoke_arn` | API Gateway 통합용 invoke ARN. `enable_alias`이면 Alias를, 아니면 함수를 가리킨다. |
+| `qualifier` | Lambda 권한 qualifier. `enable_alias`이면 alias 이름, 아니면 `null`. |
 | `role_arn` | 실행 역할 ARN. |
