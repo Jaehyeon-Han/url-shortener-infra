@@ -119,30 +119,42 @@ output "url_errors_alarm_name" {
 # CI의 LAMBDA_DEPLOY_MAP(GitHub Actions variable)에 그대로 넣을 JSON이다.
 # `terraform output -raw lambda_deploy_map`으로 뽑아 복사한다.
 # 최상위 키는 CI 매트릭스 핸들러 이름(url_handler_key/auth_handler_key)이다.
-# - url: executed_version 모드이므로 errors_alarm_name/notify_topic_arn/임계값을 포함한다.
-# - auth: alias 모드이므로 알람 갱신 관련 키는 생략한다(CI가 요구하지 않음).
+#
+# 비동기 드레이너 전환으로 CI 계약이 enqueue-only로 축소됐다(설계 async-deploy-drainer.md 9절).
+# CI(deploy.mjs 축소판)는 S3 업로드 + 버전 publish 후 DeployQueue에 desiredVersion만 enqueue하고
+# 즉시 종료한다. 따라서 CI는 function/alias만 알면 되고, codedeploy_app/group·알람 설정(errors_alarm_*
+# 등)은 전부 드레이너(modules/deploy-drainer)로 이동했다. CI는 enqueue 대상 테이블명을
+# deploy_queue_table_name 출력(DEPLOY_QUEUE_TABLE)으로 받는다.
 output "lambda_deploy_map" {
-  description = "CI LAMBDA_DEPLOY_MAP variable에 넣을 핸들러->배포 설정 매핑 JSON."
+  description = "CI LAMBDA_DEPLOY_MAP variable에 넣을 핸들러->배포 설정 매핑 JSON(enqueue-only: function/alias만)."
   value = jsonencode({
     (var.url_handler_key) = {
-      function          = module.lambda_url.function_name
-      alias             = module.lambda_url.alias_name
-      codedeploy_app    = module.codedeploy_url.app_name
-      codedeploy_group  = module.codedeploy_url.deployment_group_name
-      errors_alarm_mode = module.codedeploy_url.errors_alarm_mode
-      errors_alarm_name = module.codedeploy_url.errors_alarm_name
-      error_namespace   = module.codedeploy_url.error_namespace
-      error_metric_name = module.codedeploy_url.error_metric_name
-      notify_topic_arn  = module.codedeploy_url.sns_topic_arn
-      alarm_threshold   = module.codedeploy_url.alarm_threshold
-      alarm_period      = module.codedeploy_url.alarm_period_seconds
+      function = module.lambda_url.function_name
+      alias    = module.lambda_url.alias_name
     }
     (var.auth_handler_key) = {
-      function          = module.lambda_auth.function_name
-      alias             = module.lambda_auth.alias_name
-      codedeploy_app    = module.codedeploy_auth.app_name
-      codedeploy_group  = module.codedeploy_auth.deployment_group_name
-      errors_alarm_mode = module.codedeploy_auth.errors_alarm_mode
+      function = module.lambda_auth.function_name
+      alias    = module.lambda_auth.alias_name
     }
   })
+}
+
+# CI가 desiredVersion을 enqueue(UpdateItem)할 DeployQueue 테이블 이름이다.
+# CI의 DEPLOY_QUEUE_TABLE 환경변수로 넣는다. 드레이너와 공유한다.
+output "deploy_queue_table_name" {
+  description = "비동기 배포 큐(DeployQueue) 테이블 이름. CI가 DEPLOY_QUEUE_TABLE로 쓴다."
+  value       = module.deploy_drainer.deploy_queue_table_name
+}
+
+# DeployQueue 테이블 ARN이다. CI OIDC 배포 역할에 dynamodb:UpdateItem 권한을
+# 이 ARN으로 한정해 부여할 때 쓴다(설계 9절 IAM 분담).
+output "deploy_queue_table_arn" {
+  description = "비동기 배포 큐(DeployQueue) 테이블 ARN. CI OIDC 역할의 dynamodb:UpdateItem 대상이다."
+  value       = module.deploy_drainer.deploy_queue_table_arn
+}
+
+# 드레이너 Lambda 함수 이름이다(관측/디버깅용).
+output "deploy_drainer_function_name" {
+  description = "비동기 배포 드레이너 Lambda 함수 이름."
+  value       = module.deploy_drainer.drainer_function_name
 }

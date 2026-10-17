@@ -269,3 +269,44 @@ module "codedeploy_auth" {
 
   notification_emails = var.deploy_notification_emails
 }
+
+# 비동기 배포 드레이너다. DeployQueue 테이블 + 드레이너 Lambda + 두 트리거(DDB Streams / EventBridge
+# CodeDeploy 상태변경) + IAM을 캡슐화한다. 배포 트리거를 CI에서 떼어 이 드레이너로 옮겨, 배포가
+# 겹쳐도 CreateDeployment가 DeploymentLimitExceededException으로 거부되지 않게 큐로 직렬화한다.
+#
+# CI(deploy.mjs 축소판)는 S3 업로드 + 버전 publish 후 DeployQueue에 desiredVersion만 enqueue하고
+# 즉시 종료한다. 드레이너가 큐를 조건부 락으로 소비해 배포 그룹당 1개 제약을 지켜 순차(coalescing) 배포한다.
+#
+# deploy_config: 키는 "FN#<function>"(DeployQueue PK와 동일). lambda/codedeploy 모듈 output을 모아 조립한다.
+#   - url: executed_version 모드이므로 드레이너가 CreateDeployment 직전 PutMetricAlarm으로 신버전 기준
+#     롤백 알람을 갱신한다(알람 이름/SNS/네임스페이스/지표/임계값/주기 포함). 이 "알람 갱신 소유권"이
+#     기존 CI에서 드레이너로 이전됐다(설계 6절). codedeploy 모듈의 알람 리소스/ignore_changes는 그대로다.
+#   - auth: alias 모드이므로 알람 갱신이 없다(Terraform 정적 알람 사용). 알람 관련 키를 생략한다.
+module "deploy_drainer" {
+  source = "./modules/deploy-drainer"
+
+  name = var.name
+
+  deploy_config = {
+    "FN#${module.lambda_url.function_name}" = {
+      function          = module.lambda_url.function_name
+      alias             = module.lambda_url.alias_name
+      codedeploy_app    = module.codedeploy_url.app_name
+      codedeploy_group  = module.codedeploy_url.deployment_group_name
+      errors_alarm_mode = module.codedeploy_url.errors_alarm_mode
+      errors_alarm_name = module.codedeploy_url.errors_alarm_name
+      notify_topic_arn  = module.codedeploy_url.sns_topic_arn
+      error_namespace   = module.codedeploy_url.error_namespace
+      error_metric_name = module.codedeploy_url.error_metric_name
+      alarm_threshold   = module.codedeploy_url.alarm_threshold
+      alarm_period      = module.codedeploy_url.alarm_period_seconds
+    }
+    "FN#${module.lambda_auth.function_name}" = {
+      function          = module.lambda_auth.function_name
+      alias             = module.lambda_auth.alias_name
+      codedeploy_app    = module.codedeploy_auth.app_name
+      codedeploy_group  = module.codedeploy_auth.deployment_group_name
+      errors_alarm_mode = module.codedeploy_auth.errors_alarm_mode
+    }
+  }
+}
