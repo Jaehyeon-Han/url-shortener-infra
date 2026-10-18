@@ -29,22 +29,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # [임시 디버그] GitHub OIDC 토큰의 claim(sub/aud 등)을 찍어 신뢰 정책과 비교한다.
-      # assume 실패 원인(sub 불일치)을 확인하기 위한 용도이며, 확인 후 제거한다.
-      - name: Debug OIDC token claims
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const token = await core.getIDToken('sts.amazonaws.com');
-            const payload = JSON.parse(
-              Buffer.from(token.split('.')[1], 'base64url').toString('utf8')
-            );
-            core.info('sub: ' + payload.sub);
-            core.info('aud: ' + payload.aud);
-            core.info('repository: ' + payload.repository);
-            core.info('event_name: ' + payload.event_name);
-            core.info('ref: ' + payload.ref);
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
