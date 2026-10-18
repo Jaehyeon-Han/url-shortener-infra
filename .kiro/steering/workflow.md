@@ -109,3 +109,27 @@
   정상 동작한다(의도된 동작).
 - `porkbun` provider는 plan/apply가 실제 Porkbun DNS를 read/write한다. plan 단계에서도
   DNS read가 발생하므로 plan 역할은 AWS 읽기 전용이되 Porkbun 자격증명은 주입된다.
+
+
+### 트러블슈팅(실전 메모)
+
+파이프라인을 처음 세울 때 실제로 겪은 두 가지다.
+
+**1) OIDC subject(`sub`)에 숫자 ID가 포함된다.**
+
+- 증상: plan 잡에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity`로 assume 실패.
+- 원인: 레포 OIDC 설정이 subject claim을 immutable 숫자 ID 포함 형태로 커스터마이즈하면,
+  실제 토큰 `sub`가 `repo:<owner>@<ownerId>/<repo>@<repoId>:pull_request`처럼 발급된다.
+  신뢰 정책이 `repo:<owner>/<repo>:...`(ID 없음)로 돼 있으면 `StringEquals`가 불일치한다.
+- 확인: PR 잡에서 OIDC 토큰을 디코드해 `sub`를 로그로 찍어 확인한다(일회성 디버그 스텝).
+- 해결: `bootstrap/oidc.tf`의 `github_owner_id`/`github_repo_id` 변수에 실제 숫자 ID를 넣어
+  신뢰 정책 `sub`를 토큰과 정확히 일치시킨다. 숫자 ID는 민감정보가 아니다(GitHub API로 조회 가능).
+  신뢰 정책만 바뀌므로 `bootstrap` 재apply해도 역할 ARN은 그대로다(Secret 재설정 불필요).
+
+**2) `list` 타입 변수는 빈 Secret이면 plan/apply가 깨진다.**
+
+- 증상: `Error: Missing expression ... Expected the start of an expression, but found the end of the file`.
+- 원인: `deploy_notification_emails`는 `list(string)`이라 `TF_VAR_*` 값이 HCL 표현식으로
+  해석된다. Secret이 비어 빈 문자열이 주입되면 유효한 표현식이 아니라 파싱에 실패한다.
+- 해결: 워크플로에서 `${{ secrets.TF_VAR_deploy_notification_emails || '[]' }}`로 빈 값일 때
+  유효한 빈 리스트 `[]`를 주입한다. (plan.yml/apply.yml 모두 적용돼 있다.)
