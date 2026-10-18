@@ -18,6 +18,27 @@ variable "github_repo" {
   default     = "url-shortener-infra"
 }
 
+# 레포 OIDC 설정이 subject claim을 immutable 숫자 ID 포함 형태로 커스터마이즈해,
+# 실제 토큰 sub가 "repo:<owner>@<ownerId>/<repo>@<repoId>:..." 형태로 발급된다.
+# 신뢰 정책이 이를 정확히 매칭하도록 ID를 주입한다.
+# 확인 방법: PR 잡에서 OIDC 토큰을 디코드한 sub 값(디버그 스텝 로그).
+variable "github_owner_id" {
+  description = "GitHub 소유자(owner)의 숫자 ID. 토큰 sub의 <owner>@<id> 부분."
+  type        = string
+  default     = "184795058"
+}
+
+variable "github_repo_id" {
+  description = "GitHub 레포의 숫자 ID. 토큰 sub의 <repo>@<id> 부분."
+  type        = string
+  default     = "1385793534"
+}
+
+# 토큰 sub의 "repo:<owner>@<ownerId>/<repo>@<repoId>" 접두부다. plan/apply가 공유한다.
+locals {
+  github_sub_repo = "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}"
+}
+
 # 계정에 이미 존재하는 GitHub OIDC provider를 참조한다.
 # OIDC provider는 계정당 하나만 존재할 수 있어 신규 생성하지 않고 data로 조회한다.
 # url만 주면 account_id가 포함된 ARN은 자동으로 해석된다.
@@ -67,7 +88,7 @@ data "aws_iam_policy_document" "plan_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${var.github_repo}:pull_request"]
+      values   = ["${local.github_sub_repo}:pull_request"]
     }
   }
 }
@@ -114,7 +135,7 @@ data "aws_iam_policy_document" "apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${var.github_repo}:environment:production"]
+      values   = ["${local.github_sub_repo}:environment:production"]
     }
   }
 }

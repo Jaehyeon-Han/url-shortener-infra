@@ -64,7 +64,10 @@ jobs:
           TF_VAR_deploy_notification_emails: ${{ secrets.TF_VAR_deploy_notification_emails }}
         run: |
           set -o pipefail
-          terraform plan -no-color -input=false -lock-timeout=120s 2>&1 | tee plan_output.txt
+          # refresh 로그 등 잡음은 stderr/진행 로그로 흘리고, 코멘트에는 실행 계획 본문만 남긴다.
+          # plan을 파일로 저장한 뒤 show로 "사람이 읽는 계획"만 추출한다.
+          terraform plan -no-color -input=false -lock-timeout=120s -out=tfplan
+          terraform show -no-color tfplan > plan_output.txt
 
       - name: Comment plan on PR
         if: always()
@@ -79,11 +82,25 @@ jobs:
             // 코멘트 식별용 고유 마커. 재실행 시 이 마커가 있는 코멘트를 갱신한다.
             const marker = '<!-- terraform-plan-comment -->';
 
+            // terraform show 출력에서 실행 계획 본문만 남긴다(앞쪽에 잡음이 있으면 제거).
+            // 이 문구부터가 "심볼 설명 + 리소스 변경 + 요약"이 시작되는 지점이다.
+            const PLAN_HEADER = 'Terraform used the selected providers to generate the following execution';
+
             let plan = '';
             try {
-              plan = fs.readFileSync('plan_output.txt', 'utf8');
+              plan = fs.readFileSync('plan_output.txt', 'utf8').trim();
             } catch (e) {
-              plan = '(plan 출력을 읽지 못했다. 이전 단계가 먼저 실패했을 수 있다.)';
+              plan = '';
+            }
+
+            if (!plan) {
+              // plan이 실패해 show 결과가 없으면 안내 문구를 넣는다(상세는 Actions 로그).
+              plan = '(실행 계획을 생성하지 못했다. plan이 실패했을 수 있으니 Actions 로그를 확인한다.)';
+            } else {
+              const idx = plan.indexOf(PLAN_HEADER);
+              if (idx !== -1) {
+                plan = plan.slice(idx); // 헤더 이전의 잡음(있다면) 제거.
+              }
             }
 
             // GitHub 코멘트는 약 65536자 제한이 있다. 여유 있게 잘라낸다.
