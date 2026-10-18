@@ -1,0 +1,56 @@
+# apply 워크플로: main 브랜치에 머지(push)되면 루트 스택을 apply한다.
+#
+# - apply 잡은 environment: production에 묶인다. 이 환경에 required reviewers를 설정해두면
+#   잡이 시작 전 "승인 대기(pending)"로 멈추고, 지정 리뷰어가 Actions UI의
+#   "Review deployments"에서 승인해야 비로소 apply가 실행된다. (수동 승인 게이트)
+# - 인증은 GitHub OIDC로 apply 역할(AdministratorAccess + state R/W)을 assume한다.
+#   apply 역할의 신뢰 정책 sub가 environment:production이라, 이 환경을 거친 실행만 assume할 수 있다.
+# - 민감/환경 변수는 TF_VAR_* 환경변수로 주입한다.
+name: terraform-apply
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+# apply는 동시에 하나만 돌도록 직렬화한다(state 잠금 충돌/경쟁 방지).
+concurrency:
+  group: tf-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # 이 선언이 승인 게이트를 건다. GitHub 레포 Settings → Environments에서
+    # production 환경에 required reviewers를 설정해야 실제로 승인 대기가 생긴다.
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ">=1.10.0"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false -backend-config="bucket=${{ secrets.BACKEND_BUCKET }}"
+
+      - name: Terraform apply
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+          TF_VAR_domain_name: ${{ secrets.TF_VAR_domain_name }}
+          TF_VAR_porkbun_api_key: ${{ secrets.TF_VAR_porkbun_api_key }}
+          TF_VAR_porkbun_secret_key: ${{ secrets.TF_VAR_porkbun_secret_key }}
+          TF_VAR_deploy_notification_emails: ${{ secrets.TF_VAR_deploy_notification_emails }}
+        run: terraform apply -auto-approve -input=false -lock-timeout=120s

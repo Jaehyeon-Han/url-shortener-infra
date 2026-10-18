@@ -14,3 +14,6 @@ backend.hcl
 
 # deploy-drainer 모듈이 archive_file로 생성하는 드레이너 zip 산출물
 **/.drainer.zip
+
+# CI(plan.yml)가 PR 코멘트용으로 생성하는 plan 출력
+plan_output.txt

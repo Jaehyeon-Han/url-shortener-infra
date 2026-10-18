@@ -1,0 +1,144 @@
+# PR 워크플로: 루트 스택에 대해 fmt 검사 / validate / plan을 돌리고,
+# plan 결과를 PR에 코멘트로 upsert한다.
+#
+# - 인증은 GitHub OIDC로 plan 역할(ReadOnlyAccess + state R/W)을 assume한다.
+# - fork PR은 GitHub가 secrets를 노출하지 않으므로 같은 레포 브랜치 PR에서만 의미 있게 동작한다.
+#   (secrets 없이 OIDC/backend/porkbun 주입이 안 되어 plan 단계가 실패한다.)
+# - 민감/환경 변수는 TF_VAR_* 환경변수로 주입한다(tfvars 파일을 만들지 않는다).
+name: terraform-plan
+
+on:
+  pull_request:
+    branches: [main]
+
+# 코멘트를 쓰려면 pull-requests: write, OIDC 토큰을 받으려면 id-token: write가 필요하다.
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+# 같은 PR에 연속 푸시가 들어오면 이전 실행을 취소해 코멘트 레이스를 줄인다.
+concurrency:
+  group: tf-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ">=1.10.0"
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Terraform init
+        run: terraform init -input=false -backend-config="bucket=${{ secrets.BACKEND_BUCKET }}"
+
+      - name: Terraform validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        id: plan
+        # exit code를 보존해 실패 시 잡을 실패시키되, 코멘트는 항상 남긴다.
+        continue-on-error: true
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+          TF_VAR_domain_name: ${{ secrets.TF_VAR_domain_name }}
+          TF_VAR_porkbun_api_key: ${{ secrets.TF_VAR_porkbun_api_key }}
+          TF_VAR_porkbun_secret_key: ${{ secrets.TF_VAR_porkbun_secret_key }}
+          TF_VAR_deploy_notification_emails: ${{ secrets.TF_VAR_deploy_notification_emails }}
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -lock-timeout=120s 2>&1 | tee plan_output.txt
+
+      - name: Comment plan on PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+          FMT_OUTCOME: ${{ steps.fmt.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            // 코멘트 식별용 고유 마커. 재실행 시 이 마커가 있는 코멘트를 갱신한다.
+            const marker = '<!-- terraform-plan-comment -->';
+
+            let plan = '';
+            try {
+              plan = fs.readFileSync('plan_output.txt', 'utf8');
+            } catch (e) {
+              plan = '(plan 출력을 읽지 못했다. 이전 단계가 먼저 실패했을 수 있다.)';
+            }
+
+            // GitHub 코멘트는 약 65536자 제한이 있다. 여유 있게 잘라낸다.
+            const MAX = 60000;
+            let truncated = false;
+            if (plan.length > MAX) {
+              plan = plan.slice(plan.length - MAX); // 끝부분(요약/변경 개수)이 더 유용하다.
+              truncated = true;
+            }
+
+            const icon = (o) => o === 'success' ? '✅' : (o === 'skipped' ? '⏭️' : '❌');
+            const fmt = process.env.FMT_OUTCOME;
+            const validate = process.env.VALIDATE_OUTCOME;
+            const planOutcome = process.env.PLAN_OUTCOME;
+
+            const body = [
+              marker,
+              '## Terraform Plan',
+              '',
+              `| 단계 | 결과 |`,
+              `|---|---|`,
+              `| fmt | ${icon(fmt)} \`${fmt}\` |`,
+              `| validate | ${icon(validate)} \`${validate}\` |`,
+              `| plan | ${icon(planOutcome)} \`${planOutcome}\` |`,
+              '',
+              truncated ? '> ⚠️ plan 출력이 길어 앞부분을 잘라냈다. 전체는 Actions 로그를 참고한다.' : '',
+              '<details><summary>plan 출력 보기</summary>',
+              '',
+              '```terraform',
+              plan,
+              '```',
+              '',
+              '</details>',
+              '',
+              `_commit: ${context.sha.slice(0, 7)}_`,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            // 기존 마커 코멘트를 찾아 있으면 갱신, 없으면 생성(upsert).
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      # plan 단계가 실패했으면(continue-on-error로 잡은 경우) 잡을 실패 처리한다.
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: |
+          echo "terraform plan 이 실패했다. 위 코멘트/로그를 확인한다."
+          exit 1
